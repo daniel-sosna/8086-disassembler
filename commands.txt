@@ -1,0 +1,256 @@
+ADD     Eb  Gb  
+ADD     Ev  Gv  
+ADD     Gb  Eb  
+ADD     Gv  Ev  
+ADD     AL  Ib  
+ADD     eAX Iv  
+PUSH    ES      
+POP     ES      
+OR      Eb  Gb  
+OR      Ev  Gv  
+OR      Gb  Eb  
+OR      Gv  Ev  
+OR      AL  Ib  
+OR      eAX Iv  
+PUSH    CS      
+--              
+ADC     Eb  Gb  
+ADC     Ev  Gv  
+ADC     Gb  Eb  
+ADC     Gv  Ev  
+ADC     AL  Ib  
+ADC     eAX Iv  
+PUSH    SS      
+POP     SS      
+SBB     Eb  Gb  
+SBB     Ev  Gv  
+SBB     Gb  Eb  
+SBB     Gv  Ev  
+SBB     AL  Ib  
+SBB     eAX Iv  
+PUSH    DS      
+POP     DS      
+AND     Eb  Gb  
+AND     Ev  Gv  
+AND     Gb  Eb  
+AND     Gv  Ev  
+AND     AL  Ib  
+AND     eAX Iv  
+ES:             
+DAA             
+SUB     Eb  Gb  
+SUB     Ev  Gv  
+SUB     Gb  Eb  
+SUB     Gv  Ev  
+SUB     AL  Ib  
+SUB     eAX Iv  
+CS:             
+DAS             
+XOR     Eb  Gb  
+XOR     Ev  Gv  
+XOR     Gb  Eb  
+XOR     Gv  Ev  
+XOR     AL  Ib  
+XOR     eAX Iv  
+SS:             
+AAA             
+CMP     Eb  Gb  
+CMP     Ev  Gv  
+CMP     Gb  Eb  
+CMP     Gv  Ev  
+CMP     AL  Ib  
+CMP     eAX Iv  
+DS:             
+AAS             
+INC     eAX     
+INC     eCX     
+INC     eDX     
+INC     eBX     
+INC     eSP     
+INC     eBP     
+INC     eSI     
+INC     eDI     
+DEC     eAX     
+DEC     eCX     
+DEC     eDX     
+DEC     eBX     
+DEC     eSP     
+DEC     eBP     
+DEC     eSI     
+DEC     eDI     
+PUSH    eAX     
+PUSH    eCX     
+PUSH    eDX     
+PUSH    eBX     
+PUSH    eSP     
+PUSH    eBP     
+PUSH    eSI     
+PUSH    eDI     
+POP     eAX     
+POP     eCX     
+POP     eDX     
+POP     eBX     
+POP     eSP     
+POP     eBP     
+POP     eSI     
+POP     eDI     
+--              
+--              
+--              
+--              
+--              
+--              
+--              
+--              
+--              
+--              
+--              
+--              
+--              
+--              
+--              
+--              
+JO      Jb      
+JNO     Jb      
+JB      Jb      
+JNB     Jb      
+JZ      Jb      
+JNZ     Jb      
+JBE     Jb      
+JA      Jb      
+JS      Jb      
+JNS     Jb      
+JPE     Jb      
+JPO     Jb      
+JL      Jb      
+JGE     Jb      
+JLE     Jb      
+JG      Jb      
+GR0     Eb  Ib  
+GR0     Ev  Iv  
+GR0     Eb  Ib  
+GR0     Ev  Ib  
+TEST    Gb  Eb  
+TEST    Gv  Ev  
+XCHG    Gb  Eb  
+XCHG    Gv  Ev  
+MOV     Eb  Gb  
+MOV     Ev  Gv  
+MOV     Gb  Eb  
+MOV     Gv  Ev  
+MOV     Ew  Sw  
+LEA     Gv  M   
+MOV     Sw  Ew  
+POP     Ev      
+NOP             
+XCHG    eCX eAX 
+XCHG    eDX eAX 
+XCHG    eBX eAX 
+XCHG    eSP eAX 
+XCHG    eBP eAX 
+XCHG    eSI eAX 
+XCHG    eDI eAX 
+CBW             
+CWD             
+CALL    Ap      
+WAIT            
+PUSHF           
+POPF            
+SAHF            
+LAHF            
+MOV     AL  Ob  
+MOV     eAX Ov  
+MOV     Ob  AL  
+MOV     Ov  eAX 
+MOVSB           
+MOVSW           
+CMPSB           
+CMPSW           
+TEST    AL  Ib  
+TEST    eAX Iv  
+STOSB           
+STOSW           
+LODSB           
+LODSW           
+SCASB           
+SCASW           
+MOV     AL  Ib  
+MOV     CL  Ib  
+MOV     DL  Ib  
+MOV     BL  Ib  
+MOV     AH  Ib  
+MOV     CH  Ib  
+MOV     DH  Ib  
+MOV     BH  Ib  
+MOV     eAX Iv  
+MOV     eCX Iv  
+MOV     eDX Iv  
+MOV     eBX Iv  
+MOV     eSP Iv  
+MOV     eBP Iv  
+MOV     eSI Iv  
+MOV     eDI Iv  
+--              
+--              
+RET     Iw      
+RET             
+LES     Gv  Mp  
+LDS     Gv  Mp  
+MOV     Eb  Ib  
+MOV     Ev  Iv  
+--              
+--              
+RETF    Iw      
+RETF            
+INT     3       
+INT     Ib      
+INTO            
+IRET            
+GR1     Eb  1   
+GR1     Ev  1   
+GR1     Eb  CL  
+GR1     Ev  CL  
+AAM     I0      
+AAD     I0      
+--              
+XLAT            
+--              
+--              
+--              
+--              
+--              
+--              
+--              
+--              
+LOOPNZ  Jb      
+LOOPZ   Jb      
+LOOP    Jb      
+JCXZ    Jb      
+IN      AL  Ib  
+IN      eAX Ib  
+OUT     Ib  AL  
+OUT     Ib  eAX 
+CALL    Jv      
+JMP     Jv      
+JMP     Ap      
+JMP     Jb      
+IN      AL  DX  
+IN      eAX DX  
+OUT     DX  AL  
+OUT     DX  eAX 
+LOCK            
+--              
+REPNZ           
+REPZ            
+HLT             
+CMC             
+GR2     Eb      
+GR3     Ev      
+CLC             
+STC             
+CLI             
+STI             
+CLD             
+STD             
+GR4     Eb      
+GR5     Ev      

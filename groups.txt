@@ -1,0 +1,48 @@
+ADD             
+OR              
+ADC             
+SBB             
+AND             
+SUB             
+XOR             
+CMP             
+ROL             
+ROR             
+RCL             
+RCR             
+SHL             
+SHR             
+--              
+SAR             
+TEST    Eb  Ib  
+--              
+NOT             
+NEG             
+MUL             
+IMUL            
+DIV             
+IDIV            
+TEST    Ev  Iv  
+--              
+NOT             
+NEG             
+MUL             
+IMUL            
+DIV             
+IDIV            
+INC             
+DEC             
+--              
+--              
+--              
+--              
+--              
+--              
+INC             
+DEC             
+CALL            
+CALL    Mp      
+JMP             
+JMP     Mp      
+PUSH            
+--              
