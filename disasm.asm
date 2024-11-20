@@ -9,7 +9,7 @@ LOCALS @@
 .STACK 100h
 
 FileNameSize = 10h	;Max size of the names of the entered files
-CodeBufSize = 100h	;Size of the machine code block to read at a time
+CodeBufSize = 100h	;Size of the machine code block to read at a time (minimum 6)
 CommandSize = 16	;Size of each line in commands file
 ResultBufSize = 30	;Max size of assembly instruction we possibly will get
 CommandsFile EQU "opc.map", "$"
@@ -24,9 +24,9 @@ ENDM
 
 .DATA
 	;Files
-	inFileName	db FileNameSize dup("$")
+	inFileName	db FileNameSize dup(0), "$"
 	inHandle	dw 0
-	outFileName	db FileNameSize dup("$")
+	outFileName	db FileNameSize dup(0), "$"
 	outHandle	dw 0
 	commandsFileName	db CommandsFile
 	commahdsHandle		dw 0
@@ -35,10 +35,10 @@ ENDM
 	;Messages
 	newLine		db 13, 10, "$"
 	msgFilesSuccess	db "Successfully opened files.", 13, 10, "$"
-	msgErrOpenFile	db "Cannot open file ", "$"
-	msgHelp		db "The program disassembles machine code into instructions for the Intel 8086 microprocessor.", 13, 10
+	msgErrOpenFile	db "[ERROR] Cannot open file ", "$"
+	msgHelp		db "The program disassembles machine code into instructions for the Intel 8086 microprocessor. See README.md for more information.", 13, 10
 				db "Usage: disasm.exe [options] input_file output_file", 13, 10
-				db "  *Also, there have to be 'comm.map' and 'groups.map' files in the same directory.", 13, 10
+				db "  *Also, there have to be 'opc.map' and 'opc-grp.map' files with opcodes in the same directory.", 13, 10
 				db "  options:", 13, 10
 				db "    /?  Print this message.", 13, 10
 				db "$"
@@ -104,7 +104,7 @@ Search:
 	jc Exit		;if error
 	or ax, ax
 	jz Exit		;if 0 bytes has been read
-	; Do things
+	; Call proc passing ax and dx
 	jmp @@Loop
 
 ;-------------------------------------------------------------------
@@ -221,6 +221,8 @@ GetFileNames PROC
 
 	;Parse output file name up to first space or the end of parameters
 @@Second:
+	or cx, cx
+	jz @@Finish		;if parameters ended
 	inc si
 	dec cx
 	mov di, offset outFileName
@@ -250,7 +252,7 @@ CloseFile Proc
 	or bx, bx
 	jz @@NoClose
 	push ax
-	mov ax, 3Eh
+	mov ah, 3Eh
 	int 21h
 	pop ax
 @@NoClose:
