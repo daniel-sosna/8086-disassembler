@@ -13,4 +13,4 @@ Opcode map found at [link](http://www.mlsite.net/8086/) has been modified for th
 - Edit commands/groups if you need and make sure each line is 16 characters long
 - Delete all _`\n`_ (0x0D, 0x0A)
 - Replace all _spaces_ (0x20) with _`\0`_ (0x00)
-- Save file as `opc.map`/`opc-grp.map`
+- Save file into `temp/` directory as `opc.map`/`opc-grp.map`

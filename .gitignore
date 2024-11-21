@@ -1,1 +1,3 @@
 /temp/*
+!temp/opc.map
+!temp/opc-grp.map
