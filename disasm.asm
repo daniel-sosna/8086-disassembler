@@ -51,6 +51,7 @@ ENDM
 				db "See README.md file for more information.", 13, 10
 				db "$"
 	;Other
+	startIP		dw 100h
 	hex			db "0123456789ABCDEF"
 	resultBuf	db "0000:  ", 12 dup(?) , " "	;for command info (IP and opcode)
 				db ResultSize dup(?)			;for the command itself
@@ -118,20 +119,45 @@ Start:
 
 ;-------------------------------------------------------------------
 
-	;Read from input file
+	;Set values for reading the input file
 	mov bx, [inHandle]
 	mov cx, CodeBufSize
 	mov dx, offset codeBuf
 	@@Loop:
+		;Read machine code from the input file
 		mov ah, 3Fh
 		int 21h
 		jc Exit		;if error
 		or ax, ax
 		jz Exit		;if 0 bytes has been read
-		call Dissasemble
-		;TODO:
-		;1) move ax last bytes to the start
-		;2) read 100-x to dx+ax
+
+		cmp ax, cx
+		jne @@FileEnded			;if reached the end of the input file
+			mov ax, CodeBufSize
+			call Dissasemble
+			jmp @@PrepareForNextLoop
+		@@FileEnded:
+			add ax, dx
+			sub ax, offset codeBuf
+			call Dissasemble
+			jmp Exit
+
+		@@PrepareForNextLoop:
+		;Set values for the next loop
+		mov cx, CodeBufSize
+		sub cx, ax
+		mov dx, offset codeBuf
+		add dx, ax
+		;Move unread bytes to the beginning of the buffer
+		mov si, cx
+		mov bp, offset codeBuf
+		@@Move:
+			mov al, ds:[bp + si]
+			mov ds:[bp], al
+			inc bp
+			cmp bp, dx
+			jne @@Move
+
 		jmp @@Loop
 
 ;-------------------------------------------------------------------
@@ -185,12 +211,14 @@ Exit: ;Close all opened files and exit
 
 ;-------------------------------------------------------------------
 ; Dissasemble - dissasemble given block of machine code. End when
-; less than 6 bytes left, because opcodes can be up to 6 bytes long.
+; less than 6 bytes left, because opcodes can be up to 6 bytes long
 ; IN
-; 	ax - number of bytes in a given block of machine code
+;	ax - number of bytes in a given block of machine code
+;	ds:startIP - current IP (instruction pointer)
 ; OUT
 ;	Writes disassembled commands to the output file
 ;	ax - number of bytes left unread
+;	ds:startIP - updated IP
 ;-------------------------------------------------------------------
 Dissasemble PROC
 	push bx
@@ -200,12 +228,18 @@ Dissasemble PROC
 	push di
 	push bp
 
+	;Set maximum offset when there are still enough bytes left to read
 	mov bp, ax
-	sub bp, 6	;save maximum index, when there still enough bytes left to read
+	cmp ax, CodeBufSize
+	jne @@Skip			;skip if buffer is not full (e.g. it is the last block of code)
+		sub bp, 6		;reserve 6 bytes for last command
+	@@Skip:
+
+	push ax
 	mov si, 0
 	@@ReadCommand:
 		;Write current address (IP) to the result buffer
-		mov ax, 100h
+		mov ax, [startIP]
 		add ax, si
 		mov cx, 4
 		mov di, offset resultBuf
@@ -235,7 +269,7 @@ Dissasemble PROC
 			add di, 2
 		@@Finally:
 			cmp di, offset resultBuf + 7 + 12
-			jne @@WriteOpcodeByte	;if not end, i.e. 6 bytes haven't been written yet
+			jne @@WriteOpcodeByte	;if not the end (i.e. all 6 bytes haven't been written yet)
 
 		;Write result (assembly command) to the output file
 		mov ah, 40h
@@ -246,7 +280,10 @@ Dissasemble PROC
 
 		cmp si, bp
 		jle @@ReadCommand			;if there is still enough opcode bytes in buffer to read
-	mov ax, si
+
+	add [startIP], si	;update IP
+	pop ax
+	sub ax, si			;calculate the number of unread bytes
 
 	pop bp
 	pop di
@@ -260,11 +297,11 @@ Dissasemble ENDP
 ;-------------------------------------------------------------------
 ; GetCommand - disassemble one command
 ; IN
-; 	ds:si - where to start
+;	ds:si - where to start
 ; OUT
 ;	ch - number of bytes that make up the command
 ;	cl - size of the buffer to write
-;	ds:[resultBuf+20; resultBuf+CH) - disassembled command 
+;	ds:[resultBuf+20; resultBuf+CH) - disassembled command
 ;-------------------------------------------------------------------
 GetCommand PROC
 	push ax
@@ -288,7 +325,7 @@ GetCommand PROC
 
 	pop di
 	pop ax
-	ret 
+	ret
 GetCommand ENDP
 
 ;-------------------------------------------------------------------
@@ -325,7 +362,7 @@ WriteAsHex ENDP
 ;-------------------------------------------------------------------
 ; PrintMsg - print message (that ends by '$') to the screen
 ; IN
-; 	ds:dx - message
+;	ds:dx - message
 ;-------------------------------------------------------------------
 PrintMsg PROC
 	push ax
@@ -338,7 +375,7 @@ PrintMsg ENDP
 ;-------------------------------------------------------------------
 ; PrintErrOpenFile - print file opening error message to the screen
 ; IN
-; 	ds:dx - filename
+;	ds:dx - filename
 ;-------------------------------------------------------------------
 PrintErrOpenFile PROC
 	push ax
@@ -360,7 +397,7 @@ PrintErrOpenFile ENDP
 ; GetFileNames - Parse filenames from command line parameters (if
 ; within parameters is a set of spaces, compiler saves them as one)
 ; IN
-; 	cx - number of bytes to read
+;	cx - number of bytes to read
 ; OUT
 ;	ds:inFileName - first filename
 ;	ds:outFileName - second filename
@@ -412,7 +449,7 @@ GetFileNames ENDP
 ;-------------------------------------------------------------------
 ; CloseFile - close file if opened
 ; IN
-; 	bx - file handle
+;	bx - file handle
 ;-------------------------------------------------------------------
 CloseFile Proc
 	or bx, bx
