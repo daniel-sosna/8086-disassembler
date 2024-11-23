@@ -119,44 +119,26 @@ Start:
 
 ;-------------------------------------------------------------------
 
-	;Set values for reading the input file
 	mov bx, [inHandle]
-	mov cx, CodeBufSize
-	mov dx, offset codeBuf
 	@@Loop:
 		;Read machine code from the input file
 		mov ah, 3Fh
+		mov cx, CodeBufSize
+		mov dx, offset codeBuf
 		int 21h
 		jc Exit		;if error
 		or ax, ax
-		jz Exit		;if 0 bytes has been read
+		jz Exit		;if 0 bytes were read
 
-		cmp ax, cx
-		jne @@FileEnded			;if reached the end of the input file
-			mov ax, CodeBufSize
-			call Dissasemble
-			jmp @@PrepareForNextLoop
-		@@FileEnded:
-			add ax, dx
-			sub ax, offset codeBuf
-			call Dissasemble
-			jmp Exit
+		call Dissasemble
+		cmp ax, 0
+		jl Exit		;if ax is negative (more bytes were read than were in the buffer)
 
-		@@PrepareForNextLoop:
-		;Set values for the next loop
-		mov cx, CodeBufSize
-		sub cx, ax
-		mov dx, offset codeBuf
-		add dx, ax
-		;Move unread bytes to the beginning of the buffer
-		mov si, cx
-		mov bp, offset codeBuf
-		@@Move:
-			mov al, ds:[bp + si]
-			mov ds:[bp], al
-			inc bp
-			cmp bp, dx
-			jne @@Move
+		mov cx, 0FFFFh
+		mov dx, 0
+		sub dx, ax			;set offset -ax
+		mov ax, 4201h
+		int 21h				;move file pointer left by ax
 
 		jmp @@Loop
 
@@ -230,9 +212,9 @@ Dissasemble PROC
 
 	;Set maximum offset when there are still enough bytes left to read
 	mov bp, ax
-	cmp ax, CodeBufSize
+	cmp bp, CodeBufSize
 	jne @@Skip			;skip if buffer is not full (e.g. it is the last block of code)
-		sub bp, 6		;reserve 6 bytes for last command
+		sub bp, 5		;reserve 6 bytes for last command
 	@@Skip:
 
 	push ax
@@ -279,7 +261,7 @@ Dissasemble PROC
 		int 21h
 
 		cmp si, bp
-		jle @@ReadCommand			;if there is still enough opcode bytes in buffer to read
+		jl @@ReadCommand			;if there is still enough opcode bytes in buffer to read
 
 	add [startIP], si	;update IP
 	pop ax
