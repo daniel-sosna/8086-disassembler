@@ -229,10 +229,8 @@ Dissasemble PROC
 
 		;Disassemble command and write it to the result buffer
 		call GetCommand
-		xor bx, bx
-		mov bl, ch		;bx - number of opcode bytes
-		mov ch, 0		;cx - result line size
-		push cx
+		mov bx, cx
+		push di
 
 		;Write command's machine code to the result buffer
 		xor ax, ax
@@ -281,37 +279,83 @@ Dissasemble ENDP
 ; IN
 ;	ds:si - where to start
 ; OUT
-;	ch - number of bytes that make up the command
-;	cl - size of the buffer to write
+;	cx - number of bytes that make up the command
+;	di - size of the buffer to write
 ;	ds:[resultBuf+20; resultBuf+CH) - disassembled command
 ;-------------------------------------------------------------------
 GetCommand PROC
 	push ax
-	push di
+	push bx
+	push dx
+	push si
 
-	xor cx, cx
-	mov ch, 1
+	mov cx, 1
 	mov di, 20			;pass first 20 bytes (they are for printing IP and opcode)
 
-	;For test:
+	;Get command template from opcode map by first byte
+	xor ax, ax
 	mov al, [codeBuf + si]
-	mov [resultBuf + di], al
-	inc di
-	;TODO: disassemble command
+	inc si
+	mov bx, [commadsHandle]
+	call GetOpcodeMapLine
+
+	;Write command template for test:
+	mov bx, 0
+	@@loop:
+		mov al, [commandBuf + bx]
+		inc bx
+		mov [resultBuf + di], al
+		inc di
+		cmp bx, 16
+		jne @@loop
 
 	;Add new line
 	mov word ptr [resultBuf + di], 0A0Dh
 	add di, 2
 
-	add cx, di			;move di to cl (it works, because di, in fact, uses only low byte)
-
-	pop di
+	pop si
+	pop dx
+	pop bx
 	pop ax
 	ret
 GetCommand ENDP
 
 ;-------------------------------------------------------------------
-; WriteAsHex - convert an integer into hexadecimal as string
+; GetOpcodeMapLine - parse a line from a file with opcode map
+; IN
+;	al - line number
+;	bx - file hadle
+; OUT
+;	ds:commandBuf - parsed command line
+;-------------------------------------------------------------------
+GetOpcodeMapLine PROC
+	push ax
+	push cx
+	push dx
+
+	mov ah, CommandSize
+	mul ah				;ax = al * ah = line number * line size
+
+	;Move file pointer to the beginning of ax line
+	mov cx, 0
+	mov dx, ax
+	mov ax, 4200h
+	int 21h
+
+	;Read line and store to the command buffer
+	mov ah, 3Fh
+	mov cx, 16
+	mov dx, offset commandBuf
+	int 21h
+
+	pop dx
+	pop cx
+	pop ax
+	ret
+GetOpcodeMapLine ENDP
+
+;-------------------------------------------------------------------
+; WriteAsHex - store an integer in buffer in hexadecimal format
 ; IN
 ;	ah / ax - integer to convert
 ;	cx (2 or 4) - size of the integer:
