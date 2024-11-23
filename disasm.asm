@@ -11,8 +11,7 @@ LOCALS @@
 FileNameSize = 15	;Max size of the names of the entered files
 CodeBufSize = 100h	;Size of the machine code block to read at a time (minimum 6)
 CommandSize = 16	;Size of each line in commands file
-ResultSize = 50		;22 + max size of assembly instruction we possibly can get
-			;50 = IP(5+2) + Opcode(12+1) + command(28) + NL(2)
+ResultSize = 30		;max possible size of assembly instruction + 2 for newline
 CommandsFile EQU "opc.map", "$"
 GroupsFile EQU "opc-grp.map", "$"
 
@@ -52,7 +51,9 @@ ENDM
 				db "See README.md file for more information.", 13, 10
 				db "$"
 	;Other
-	resultBuf	db "0000:  ", 12 dup(?) , " ", ResultSize-20 dup(?)
+	hex			db "0123456789ABCDEF"
+	resultBuf	db "0000:  ", 12 dup(?) , " "	;for command info (IP and opcode)
+				db ResultSize dup(?)			;for the command itself
 
 .DATA?	;Uninitialized data
 	codeBuf		db CodeBufSize dup(?)
@@ -115,7 +116,7 @@ Start:
 	mov dx, offset msgFilesSuccess
 	call PrintMsg
 
-	;-------------------------------------------------------------------
+;-------------------------------------------------------------------
 
 	;Read from input file
 	mov bx, [inHandle]
@@ -133,7 +134,7 @@ Start:
 		;2) read 100-x to dx+ax
 		jmp @@Loop
 
-	;-------------------------------------------------------------------
+;-------------------------------------------------------------------
 
 Exit: ;Close all opened files and exit
 	mov bx, [inHandle]
@@ -186,7 +187,7 @@ Exit: ;Close all opened files and exit
 ; Dissasemble - dissasemble given block of machine code. End when
 ; less than 6 bytes left, because opcodes can be up to 6 bytes long.
 ; IN
-; 	ax - number of bytes in machine code
+; 	ax - number of bytes in a given block of machine code
 ; OUT
 ;	Writes disassembled commands to the output file
 ;	ax - number of bytes left unread
@@ -202,47 +203,49 @@ Dissasemble PROC
 	mov bp, ax
 	sub bp, 6	;save maximum index, when there still enough bytes left to read
 	mov si, 0
-	@@Loop:
+	@@ReadCommand:
 		;Write current address (IP) to the result buffer
-		mov ax, si
-		add ax, 100h
+		mov ax, 100h
+		add ax, si
+		mov cx, 4
 		mov di, offset resultBuf
-		;call WriteAsHex 
-		;WriteAsHex: ax -> toHex -> ds:di
-		;			 di += (2 or 4)
+		call WriteAsHex
 
 		;Disassemble command and write it to the result buffer
 		call GetCommand
 		xor bx, bx
 		mov bl, ch		;bx - number of opcode bytes
 		mov ch, 0		;cx - result line size
+		push cx
 
 		;Write command's machine code to the result buffer
 		xor ax, ax
+		mov cx, 2		;for WriteAsHex procedure
 		mov di, offset resultBuf + 7
 		@@WriteOpcodeByte:
 			or bx, bx
 			jz @@WriteSpace			;if bx = 0
-				mov al, [codeBuf + si]
-				;call WriteAsHex
+				mov ah, [codeBuf + si]
+				call WriteAsHex
 				dec bx
 				inc si
 				jmp @@Finally
 		@@WriteSpace:
 			mov word ptr [di], "  "
-		@@Finally:
 			add di, 2
+		@@Finally:
 			cmp di, offset resultBuf + 7 + 12
 			jne @@WriteOpcodeByte	;if not end, i.e. 6 bytes haven't been written yet
 
 		;Write result (assembly command) to the output file
 		mov ah, 40h
 		mov bx, [outHandle]
+		pop cx
 		mov dx, offset resultBuf
 		int 21h
 
 		cmp si, bp
-		jle @@Loop		;if enough opcode bytes left in buffer to read
+		jle @@ReadCommand			;if there is still enough opcode bytes in buffer to read
 	mov ax, si
 
 	pop bp
@@ -257,7 +260,7 @@ Dissasemble ENDP
 ;-------------------------------------------------------------------
 ; GetCommand - disassemble one command
 ; IN
-; 	si - where to start
+; 	ds:si - where to start
 ; OUT
 ;	ch - number of bytes that make up the command
 ;	cl - size of the buffer to write
@@ -287,6 +290,37 @@ GetCommand PROC
 	pop ax
 	ret 
 GetCommand ENDP
+
+;-------------------------------------------------------------------
+; WriteAsHex - convert an integer into hexadecimal as string
+; IN
+;	ah / ax - integer to convert
+;	cx (2 or 4) - size of the integer:
+;			2(nibbles) for 1 byte integer / 4(nibbles) - for 2 bytes
+;	ds:di - output buffer
+; OUT
+;	An ASCII string with a number converted to hex, stored in ds:di
+;	di += (2 or 4)
+;-------------------------------------------------------------------
+WriteAsHex PROC
+	push ax
+	push bx
+	push cx
+
+	@@Repeat:
+	rol ax, 4
+	mov bx, ax
+	and bx, 000Fh
+	mov bl, [bx + hex]
+	mov [di], bl
+	inc di
+	loop @@Repeat
+
+	pop cx
+	pop bx
+	pop ax
+	ret
+WriteAsHex ENDP
 
 ;-------------------------------------------------------------------
 ; PrintMsg - print message (that ends by '$') to the screen
