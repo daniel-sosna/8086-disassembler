@@ -50,9 +50,13 @@ ENDM
 				db 13, 10
 				db "See README.md file for more information.", 13, 10
 				db "$"
+	;Parts of a command
+	_unknown	db "UNKNOWN"
+	_byte		db "byte ptr "
+	_word		db "word ptr "
 	;Other
-	startIP		dw 100h
 	hex			db "0123456789ABCDEF"
+	startIP		dw 100h
 	resultBuf	db "0000:  ", 12 dup(?) , " "	;for command info (IP and opcode)
 				db ResultSize dup(?)			;for the command itself
 
@@ -75,7 +79,7 @@ Start:
 	push cx
 	mov bx, 0081h			;Program parameters stored from 129-th (81h) byte of ES
 	Search:
-		cmp [es:bx], '?/'	;In the memory, low byte is stored before high ('?' is in BL, '/' - in BH)
+		cmp word ptr [es:bx], '?/'	;In the memory, low byte is stored before high ('?' is in BL, '/' - in BH)
 		JumpIfZero PrintHelpAndCloseFiles
 		inc bx
 		loop Search
@@ -224,7 +228,7 @@ Dissasemble PROC
 		mov ax, [startIP]
 		add ax, si
 		mov cx, 4
-		mov di, offset resultBuf
+		mov di, 0
 		call WriteAsHex
 
 		;Disassemble command and write it to the result buffer
@@ -233,9 +237,8 @@ Dissasemble PROC
 		push di
 
 		;Write command's machine code to the result buffer
-		xor ax, ax
 		mov cx, 2		;for WriteAsHex procedure
-		mov di, offset resultBuf + 7
+		mov di, 7
 		@@WriteOpcodeByte:
 			or bx, bx
 			jz @@WriteSpace			;if bx = 0
@@ -245,10 +248,10 @@ Dissasemble PROC
 				inc si
 				jmp @@Finally
 		@@WriteSpace:
-			mov word ptr [di], "  "
+			mov word ptr [resultBuf + di], "  "
 			add di, 2
 		@@Finally:
-			cmp di, offset resultBuf + 7 + 12
+			cmp di, 7 + 12
 			jne @@WriteOpcodeByte	;if not the end (i.e. all 6 bytes haven't been written yet)
 
 		;Write result (assembly command) to the output file
@@ -288,31 +291,58 @@ GetCommand PROC
 	push bx
 	push dx
 	push si
+	push bp
 
 	mov cx, 1
 	mov di, 20			;pass first 20 bytes (they are for printing IP and opcode)
 
 	;Get command template from opcode map by first byte
-	xor ax, ax
+	xor ah, ah
 	mov al, [codeBuf + si]
 	inc si
 	mov bx, [commadsHandle]
 	call GetOpcodeMapLine
 
-	;Write command template for test:
-	mov bx, 0
-	@@loop:
-		mov al, [commandBuf + bx]
-		inc bx
-		mov [resultBuf + di], al
-		inc di
-		cmp bx, 16
-		jne @@loop
+; Check for exception cases:
 
+	;Check if command is in group
+	cmp word ptr[commandBuf], 'RG'
+	jne @@SkipGroups
+		;Calculate line number for opcode groups map:
+		; al = groupNr * 8 + --XXX---
+		mov al, [commandBuf + 2]
+		sub al, 48
+		mov ah, 8
+		mul ah
+		mov bl, [codeBuf + si]
+		and bl, 00111000b
+		shr bl, 3
+		add al, bl
+		;Get command template from opcode groups map
+		mov bx, [groupsHandle]
+		call GetOpcodeMapLine
+	@@SkipGroups:
+
+	;Check if command is unknown
+	cmp word ptr[commandBuf], '--'
+	jne @@CommandExists
+		mov al, 7
+		mov bp, offset _unknown
+		call WriteToBuf
+		jmp @@End
+
+@@CommandExists:
+	;For test:
+	mov al, 16
+	mov bp, offset commandBuf
+	call WriteToBuf
+
+@@End:
 	;Add new line
 	mov word ptr [resultBuf + di], 0A0Dh
 	add di, 2
 
+	pop bp
 	pop si
 	pop dx
 	pop bx
@@ -355,14 +385,46 @@ GetOpcodeMapLine PROC
 GetOpcodeMapLine ENDP
 
 ;-------------------------------------------------------------------
-; WriteAsHex - store an integer in buffer in hexadecimal format
+; WriteToBuf - copy string from input buffer to result buffer,
+; replacing zeroes with spaces.
+; IN
+;	al - number of bytes to copy
+;	ds:bp (CAN BE CHANGED) - input buffer
+;	ds:[resultBuf+di] - output buffer
+; OUT
+;	Copied string, stored in ds:[resultBuf+di]
+;	di += al
+;-------------------------------------------------------------------
+WriteToBuf PROC
+	push ax
+	push bp
+
+	@@Loop:
+		mov ah, [ds:bp]
+		inc bp
+		cmp ah, 0
+		jne @@NotZero
+			mov ah, " "
+		@@NotZero:
+		mov [resultBuf + di], ah
+		inc di
+		dec al
+		jnz @@Loop
+
+	pop bp
+	pop ax
+	ret
+WriteToBuf ENDP
+
+;-------------------------------------------------------------------
+; WriteAsHex - write an integer into result buffer in hexadecimal format
 ; IN
 ;	ah / ax - integer to convert
 ;	cx (2 or 4) - size of the integer:
 ;			2(nibbles) for 1 byte integer / 4(nibbles) - for 2 bytes
-;	ds:di - output buffer
+;	ds:[resultBuf+di] - output buffer
 ; OUT
-;	An ASCII string with a number converted to hex, stored in ds:di
+;	An ASCII string with a number converted to hex, stored in ds:[resultBuf+di]
 ;	di += (2 or 4)
 ;-------------------------------------------------------------------
 WriteAsHex PROC
@@ -374,8 +436,8 @@ WriteAsHex PROC
 	rol ax, 4
 	mov bx, ax
 	and bx, 000Fh
-	mov bl, [bx + hex]
-	mov [di], bl
+	mov bl, [hex + bx]
+	mov [resultBuf + di], bl
 	inc di
 	loop @@Repeat
 
