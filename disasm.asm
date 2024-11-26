@@ -10,7 +10,7 @@ LOCALS @@
 
 FileNameSize = 15	;Max size of the names of the entered files
 CodeBufSize = 100h	;Size of the machine code block to read at a time (minimum 6)
-CommandSize = 16	;Size of each line in commands file
+CommandSize = 16	;Size of each line in opcodes file
 ResultSize = 30		;max possible size of assembly instruction + 2 for newline
 CommandsFile EQU "opc.map", "$"
 GroupsFile EQU "opc-grp.map", "$"
@@ -63,6 +63,7 @@ ENDM
 .DATA?	;Uninitialized data
 	codeBuf		db CodeBufSize dup(?)
 	commandBuf	db CommandSize dup(?)
+	groupsBuf	db CommandSize dup(?)
 
 .CODE
 Start:
@@ -301,26 +302,17 @@ GetCommand PROC
 	mov al, [codeBuf + si]
 	inc si
 	mov bx, [commadsHandle]
-	call GetOpcodeMapLine
+	call GetOpcodeLine
 
 ; Check for exception cases:
 
 	;Check if command is in group
 	cmp word ptr[commandBuf], 'RG'
 	jne @@SkipGroups
-		;Calculate line number for opcode groups map:
-		; al = groupNr * 8 + --XXX---
 		mov al, [commandBuf + 2]
-		sub al, 48
-		mov ah, 8
-		mul ah
+		sub al, 48		;convert ASCII symbol to a number
 		mov bl, [codeBuf + si]
-		and bl, 00111000b
-		shr bl, 3
-		add al, bl
-		;Get command template from opcode groups map
-		mov bx, [groupsHandle]
-		call GetOpcodeMapLine
+		call GetOpcodeGroupsLine
 	@@SkipGroups:
 
 	;Check if command is unknown
@@ -330,8 +322,10 @@ GetCommand PROC
 		mov bp, offset _unknown
 		call WriteToBuf
 		jmp @@End
+	@@CommandExists:
 
-@@CommandExists:
+; Decryption of command template:
+
 	;For test:
 	mov al, 16
 	mov bp, offset commandBuf
@@ -351,23 +345,25 @@ GetCommand PROC
 GetCommand ENDP
 
 ;-------------------------------------------------------------------
-; GetOpcodeMapLine - parse a line from a file with opcode map
+; GetOpcodeLine - parse a line from a file with opcodes
 ; IN
 ;	al - line number
-;	bx - file hadle
 ; OUT
-;	ds:commandBuf - parsed command line
+;	ds:commandBuf - parsed line with command template
 ;-------------------------------------------------------------------
-GetOpcodeMapLine PROC
+GetOpcodeLine PROC
 	push ax
+	push bx
 	push cx
 	push dx
 
+	;Calculate offset for the pointer
 	mov ah, CommandSize
 	mul ah				;ax = al * ah = line number * line size
 
 	;Move file pointer to the beginning of ax line
 	mov cx, 0
+	mov bx, [commadsHandle]
 	mov dx, ax
 	mov ax, 4200h
 	int 21h
@@ -380,16 +376,75 @@ GetOpcodeMapLine PROC
 
 	pop dx
 	pop cx
+	pop bx
 	pop ax
 	ret
-GetOpcodeMapLine ENDP
+GetOpcodeLine ENDP
+
+;-------------------------------------------------------------------
+; GetOpcodeGroupsLine - parse a line from the file with opcode groups
+; IN
+;	al - group number
+;	bl - second byte of a command
+; OUT
+;	ds:commandBuf - parsed line with command template
+;-------------------------------------------------------------------
+GetOpcodeGroupsLine PROC
+	push ax
+	push bx
+	push cx
+	push dx
+	push di
+
+	;Calculate line number for opcode groups map:
+	mov ah, 8
+	mul ah				;multiplicate al by 8
+	and bl, 00111000b	;extract only 3 to 5 bites
+	shr bl, 3			;shift them to the right
+	add al, bl			;al = groupNr * 8 + --XXX---
+
+	;Calculate offset for the pointer
+	mov ah, CommandSize
+	mul ah				;ax = al * ah = line number * line size
+
+	;Move file pointer to the beginning of ax line
+	mov bx, [groupsHandle]
+	mov cx, 0
+	mov dx, ax
+	mov ax, 4200h
+	int 21h
+
+	;Store line in the groups buffer
+	mov ah, 3Fh
+	mov cx, 16
+	mov dx, offset groupsBuf
+	int 21h
+
+	;Move template from the groups buffer to the command buffer
+	mov al, 8
+	cmp [groupsBuf + 8], 0
+	je @@NoParameters
+		mov al, 16
+	@@NoParameters:
+	mov bp, offset groupsBuf
+	mov di, offset commandBuf
+	sub di, offset resultBuf		;because procedure will add it later
+	call WriteToBuf
+
+	pop di
+	pop dx
+	pop cx
+	pop bx
+	pop ax
+	ret
+GetOpcodeGroupsLine ENDP
 
 ;-------------------------------------------------------------------
 ; WriteToBuf - copy string from input buffer to result buffer,
 ; replacing zeroes with spaces.
 ; IN
 ;	al - number of bytes to copy
-;	ds:bp (CAN BE CHANGED) - input buffer
+;	ds:bp - input buffer
 ;	ds:[resultBuf+di] - output buffer
 ; OUT
 ;	Copied string, stored in ds:[resultBuf+di]
