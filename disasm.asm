@@ -70,7 +70,7 @@ ENDM
 	_addrRegs1	db "bx+si", "bx+di", "bp+si", "bp+di"	;mod != 11b, r/m < 100b
 	_addrRegs2	db "si", "di", "bp", "bx"				;mod != 11b, r/m >= 100b
 	_segments	db "es", "cs", "ss", "ds"		;sreg
-	;_
+
 	;Other
 	hex			db "0123456789ABCDEF"
 	startIP		dw 100h
@@ -351,11 +351,13 @@ GetCommand PROC
 	mov word ptr [modByteFlag], 1
 	mov bx, 8
 	cmp [commandBuf + bx], 0
-	je @@End			;if there is first operand
+	je @@End			;if there is no first operand
 		call DecryptOperands
 		mov bx, 12
 		cmp [commandBuf + bx], 0
-		je @@End		;if there is second operand
+		je @@End		;if there is no second operand
+		cmp [commandBuf + bx], " "
+		je @@End		;if there is no second operand
 			;Add comma between operands
 			WriteWord " ,"
 			call DecryptOperands
@@ -508,6 +510,9 @@ DecryptOperands PROC
 	cmp [commandBuf + bx], "M"
 	jne @@M_Skip
 
+		add si, [modByteFlag]		;increase si, if ModR/M byte hasn't been used yet
+		mov [modByteFlag], 0
+
 		;Get Mod field from ModR/M byte (dl)
 		mov dh, dl
 		and dh, 11000000b			;keep only mod field (1 to 2 bites)
@@ -613,10 +618,17 @@ DecryptOperands PROC
 	cmp [commandBuf + bx], "J"
 	jne @@J_Skip
 
-		xor ah, ah
-		mov al, [codeBuf + si]		;read relative offset
-		inc si
-		cbw							;convert al to ax
+		cmp [commandBuf + bx + 1], "w"
+		je @@J_OffsetWord
+			xor ah, ah
+			mov al, [codeBuf + si]	;read relative offset
+			inc si
+			cbw						;convert al to ax
+			jmp @@J_OffsetByte
+		@@J_OffsetWord:
+			mov ax, word ptr [codeBuf + si]		;read relative offset
+			add si, 2
+		@@J_OffsetByte:
 		add ax, [startIP]
 		add ax, si					;add address of the subsequent instruction
 		mov cx, 4
@@ -630,18 +642,13 @@ DecryptOperands PROC
 	cmp word ptr [commandBuf + bx], "pA"
 	jne @@A_Skip
 
-		mov ax, word ptr [codeBuf + si]		;get offset 
-		mov dx, ax
-		shr ax, 4
-		add ax, word ptr [codeBuf + si + 2]	;add segment
-		mov cx, 1
-		call WriteAsHex				;write X----h
-
-		and dx, 000Fh				;keep only lowest nibble
-		shl ax, 4
-		add ax, dx
+		mov ax, word ptr [codeBuf + si + 2]	;get segment
 		mov cx, 4
-		call WriteAsHex				;write -XXXXh
+		call WriteAsHex
+		WriteByte ":"
+		mov ax, word ptr [codeBuf + si]		;get offset 
+		mov cx, 4
+		call WriteAsHex
 		add si, 4
 
 		jmp @@End
