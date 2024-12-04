@@ -392,13 +392,262 @@ DecryptOperands PROC
 	push cx
 	push dx
 
-; Template
-	cmp [commandBuf + bx], "X"
-	jne @@SkipX
-		jmp @@End
-	@@SkipX:
+; (_) Predefined general or segment register
+	cmp [commandBuf + bx], "_"
+	jne @@rs_Skip
 
-	@@End:
+		mov ax, word ptr [commandBuf + bx + 1]
+		WriteWord ax
+
+		jmp @@End
+	@@rs_Skip:
+
+
+; (E) A ModR/M byte follows the opcode and specifies the operand
+	; The operand is either a general-purpose register or a memory address
+	cmp [commandBuf + bx], "E"
+	je @@E
+		jmp @@E_Skip
+	@@E:
+
+		add si, [modByteFlag]		;increase si, if ModR/M byte hasn't been used yet
+		mov [modByteFlag], 0
+
+		;Get Mod and R/M fields from ModR/M byte (dl)
+		mov dh, dl
+		and dh, 11000000b	;keep only mod field (1 to 2 bites)
+		shr dh, 6			;shift mod bites to the right
+		and dl, 00000111b	;keep only r/m field (6 to 8 bites)
+
+	cmp dh, 11b
+	jne @@E_Memory
+	;Operand is a register stored in R/M field from ModR/M byte (dl)
+		xor dh, dh
+		add dl, dl			;multiply by 2 (because registers are two symbols, e.g. "AX")
+		cmp [commandBuf + bx + 1], "w"
+		jne @@E_NotWord
+			add dl, 16
+		@@E_NotWord:
+		mov bx, dx
+		mov ax, word ptr [_registers + bx]
+		WriteWord ax
+
+		jmp @@End
+	@@E_Memory:
+	;Operand is a memory addres
+		;Write "byte/word ptr" if needed
+		cmp [commandBuf + bx + 1], "w"
+		jne @@E_SkipWordPtr
+			mov al, 9
+			mov bx, offset _wordPtr
+			call WriteToBuf
+			jmp @@E_SkipBytePtr
+		@@E_SkipWordPtr:
+		cmp [commandBuf + bx + 2], "t"
+		jne @@E_SkipBytePtr
+			mov al, 9
+			mov bx, offset _bytePtr
+			call WriteToBuf
+		@@E_SkipBytePtr:
+
+		WriteByte "["
+
+		;Check if it is a direct address
+		cmp dl, 110b
+		jne @@E_NotDirectAddress
+			cmp dh, 00b
+			je @@E_NoPlus
+		@@E_NotDirectAddress:
+
+		;Write corresponding register(s) into square brackets
+		cmp dl, 100b
+		jge @@E_AddrReg2
+			mov al, dl
+			mov ah, 5
+			mul ah			;multiply by 5 (because there are two registers and a plus, e.g. "BX+SI")
+			mov bx, ax
+			mov al, 5
+			add bx, offset _addrRegs1
+			call WriteToBuf
+			jmp @@E_AddrReg1
+		@@E_AddrReg2:
+			xor bh, bh
+			mov bl, dl
+			sub bl, 100b	;substract to start from zero
+			add bl, bl		;multiply by 2 (because registers are two symbols, e.g. "AX")
+			mov ax, word ptr [_addrRegs2 + bx]
+			WriteWord ax
+		@@E_AddrReg1:
+
+		cmp dh, 00b
+		je @@E_NoOffset		;if there is no offset
+			WriteByte "+"
+			@@E_NoPlus:
+
+			cmp dh, 01b
+			je @@E_OffsetByte
+				mov ax, word ptr [codeBuf + si]
+				add si, 2
+				mov cx, 4
+				jmp @@E_OffsetWord
+			@@E_OffsetByte:
+				mov ah, [codeBuf + si]
+				inc si
+				mov cx, 2
+			@@E_OffsetWord:
+			call WriteAsHex
+		@@E_NoOffset:
+
+		WriteByte "]"
+
+		jmp @@End
+	@@E_Skip:
+
+
+; (M) The ModR/M byte may refer only to memory
+	cmp [commandBuf + bx], "M"
+	jne @@M_Skip
+
+		;Get Mod field from ModR/M byte (dl)
+		mov dh, dl
+		and dh, 11000000b			;keep only mod field (1 to 2 bites)
+		shr dh, 6					;shift mod bites to the right
+		and dl, 00000111b			;keep only r/m field (6 to 8 bites)
+
+		cmp dh, 11b
+		je @@M_InvalidValue
+			jmp @@E_Memory			;if ModR/M byte is valid
+		@@M_InvalidValue:
+			mov al, 7
+			mov bx, offset _Unknown
+			mov di, 20
+			call WriteToBuf
+
+		jmp @@End
+	@@M_Skip:
+
+
+; (O) The offset of the operand is encoded as a word in the instruction
+	cmp [commandBuf + bx], "O"
+	jne @@O_Skip
+
+		WriteByte "["
+		mov dh, 10b
+		jmp @@E_NoPlus
+
+	@@O_Skip:
+
+
+; (G) The reg field of the ModR/M byte selects a general register
+	cmp [commandBuf + bx], "G"
+	jne @@G_Skip
+
+		add si, [modByteFlag]		;increase si, if ModR/M byte hasn't been used yet
+		mov [modByteFlag], 0
+
+		;Get Reg field from ModR/M byte (dl)
+		xor dh, dh
+		and dl, 00111000b			;keep only reg field (3 to 5 bites)
+		shr dl, 3					;shift them to the right
+
+		;Write corresponding register to the result buffer
+		add dl, dl					;multiply by 2 (because registers are two symbols, e.g. "AX")
+		cmp [commandBuf + bx + 1], "w"
+		jne @@G_NotWord
+			add dl, 16
+		@@G_NotWord:
+		mov bx, dx
+		mov ax, word ptr [_registers + bx]
+		WriteWord ax
+
+		jmp @@End
+	@@G_Skip:
+
+
+; (S) The reg field of the ModR/M byte selects a segment register
+	cmp [commandBuf + bx], "S"
+	jne @@S_Skip
+
+		add si, [modByteFlag]		;increase si, if ModR/M byte hasn't been used yet
+		mov [modByteFlag], 0
+
+		;Get sReg field from ModR/M byte (dl)
+		and dl, 00011000b			;keep only 4 to 5 bites
+		shr dl, 3					;shift them to the right
+
+		;Write corresponding segment register to the result buffer
+		xor dh, dh
+		add dl, dl					;multiply by 2 (because registers are two symbols, e.g. "DS")
+		mov bx, dx
+		mov ax, word ptr [_segments + bx]
+		WriteWord ax
+
+		jmp @@End
+	@@S_Skip:
+
+
+; (I) Immediate data. The operand value is encoded in subsequent bytes of the instruction
+	cmp [commandBuf + bx], "I"
+	jne @@I_Skip
+
+		cmp [commandBuf + bx + 1], "w"
+		je @@I_Word
+			;Write subsequent byte
+			mov ah, [codeBuf + si]
+			inc si
+			mov cx, 2
+			jmp @@I_Byte
+		@@I_Word:
+			;Write subsequent word
+			mov ax, word ptr [codeBuf + si]
+			add si, 2
+			mov cx, 4
+		@@I_Byte:
+		call WriteAsHex
+
+		jmp @@End
+	@@I_Skip:
+
+
+; (J) The instruction contains a relative offset to be added to the address of the subsequent instruction
+	cmp [commandBuf + bx], "J"
+	jne @@J_Skip
+
+		xor ah, ah
+		mov al, [codeBuf + si]		;read relative offset
+		inc si
+		cbw							;convert al to ax
+		add ax, [startIP]
+		add ax, si					;add address of the subsequent instruction
+		mov cx, 4
+		call WriteAsHex
+
+		jmp @@End
+	@@J_Skip:
+
+
+; (Ap) Absolute adress = segment:offset
+	cmp word ptr [commandBuf + bx], "pA"
+	jne @@A_Skip
+
+		mov ax, word ptr [codeBuf + si]		;get offset 
+		mov dx, ax
+		shr ax, 4
+		add ax, word ptr [codeBuf + si + 2]	;add segment
+		mov cx, 1
+		call WriteAsHex				;write X----h
+
+		and dx, 000Fh				;keep only lowest nibble
+		shl ax, 4
+		add ax, dx
+		mov cx, 4
+		call WriteAsHex				;write -XXXXh
+		add si, 4
+
+		jmp @@End
+	@@A_Skip:
+
+@@End:
 	pop dx
 	pop cx
 	pop ax
