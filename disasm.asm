@@ -27,6 +27,15 @@ JumpIfCarry MACRO label
 	jmp label
 	skip:
 ENDM
+WriteByte MACRO byte
+	mov [resultBuf + di], byte
+	inc di
+ENDM
+WriteWord MACRO word
+	mov word ptr [resultBuf + di], word
+	inc di
+	inc di
+ENDM
 
 .DATA
 	;Files
@@ -51,12 +60,21 @@ ENDM
 				db "See README.md file for more information.", 13, 10
 				db "$"
 	;Parts of a command
-	_unknown	db "UNKNOWN"
-	_byte		db "byte ptr "
-	_word		db "word ptr "
+	_Unknown	db "UNKNOWN"
+	_bytePtr	db "byte ptr "
+	_wordPtr	db "word ptr "
+	_registers	db "al", "cl", "dl", "bl"		;mod = 11b, b
+				db "ah", "ch", "dh", "bh"
+				db "ax", "cx", "dx", "bx"		;mod = 11b, w
+				db "sp", "bp", "si", "di"
+	_addrRegs1	db "bx+si", "bx+di", "bp+si", "bp+di"	;mod != 11b, r/m < 100b
+	_addrRegs2	db "si", "di", "bp", "bx"				;mod != 11b, r/m >= 100b
+	_segments	db "es", "cs", "ss", "ds"		;sreg
+	;_
 	;Other
 	hex			db "0123456789ABCDEF"
 	startIP		dw 100h
+	modByteFlag	dw 1			; 0 - ModR/M byte has been used, 1 - hasn't
 	resultBuf	db "0000:  ", 12 dup(?) , " "	;for command info (IP and opcode)
 				db ResultSize dup(?)			;for the command itself
 
@@ -70,9 +88,9 @@ Start:
 	mov ax, @data
 	mov ds, ax
 
-	;Get program parameters lenght and check is there are any
+	;Get program parameters length and check is there are any
 	mov ch, 0
-	mov cl, [es:0080h]		;Program parameters lenght in bytes stored in 128-th (80h) byte of ES
+	mov cl, [es:0080h]		;Program parameters length in bytes stored in 128-th (80h) byte of ES
 	or cx, cx
 	JumpIfZero PrintHelpAndCloseFiles
 
@@ -234,7 +252,6 @@ Dissasemble PROC
 
 		;Disassemble command and write it to the result buffer
 		call GetCommand
-		mov bx, cx
 		push di
 
 		;Write command's machine code to the result buffer
@@ -249,8 +266,7 @@ Dissasemble PROC
 				inc si
 				jmp @@Finally
 		@@WriteSpace:
-			mov word ptr [resultBuf + di], "  "
-			add di, 2
+			WriteWord "  "
 		@@Finally:
 			cmp di, 7 + 12
 			jne @@WriteOpcodeByte	;if not the end (i.e. all 6 bytes haven't been written yet)
@@ -283,18 +299,17 @@ Dissasemble ENDP
 ; IN
 ;	ds:si - where to start
 ; OUT
-;	cx - number of bytes that make up the command
+;	bx - number of bytes that make up the command
 ;	di - size of the buffer to write
 ;	ds:[resultBuf+20; resultBuf+CH) - disassembled command
 ;-------------------------------------------------------------------
 GetCommand PROC
 	push ax
-	push bx
+	push cx
 	push dx
-	push si
 	push bp
 
-	mov cx, 1
+	push si
 	mov di, 20			;pass first 20 bytes (they are for printing IP and opcode)
 
 	;Get command template from opcode map by first byte
@@ -319,30 +334,76 @@ GetCommand PROC
 	cmp word ptr[commandBuf], '--'
 	jne @@CommandExists
 		mov al, 7
-		mov bp, offset _unknown
+		mov bx, offset _Unknown
 		call WriteToBuf
 		jmp @@End
 	@@CommandExists:
 
 ; Decryption of command template:
 
-	;For test:
-	mov al, 16
-	mov bp, offset commandBuf
+	;Write name of a command
+	mov al, 8
+	mov bx, offset commandBuf
 	call WriteToBuf
 
+	;Write operands
+	mov dl, [codeBuf + si]
+	mov word ptr [modByteFlag], 1
+	mov bx, 8
+	cmp [commandBuf + bx], 0
+	je @@End			;if there is first operand
+		call DecryptOperands
+		mov bx, 12
+		cmp [commandBuf + bx], 0
+		je @@End		;if there is second operand
+			;Add comma between operands
+			WriteWord " ,"
+			call DecryptOperands
+
 @@End:
+	mov bx, si
+	pop si
+	sub bx, si
 	;Add new line
-	mov word ptr [resultBuf + di], 0A0Dh
-	add di, 2
+	WriteWord 0A0Dh
 
 	pop bp
-	pop si
 	pop dx
-	pop bx
+	pop cx
 	pop ax
 	ret
 GetCommand ENDP
+
+;-------------------------------------------------------------------
+; DecryptOperands - decrypts an operand using its template from
+; commandBuf and subsequent bytes if needed 
+; IN
+;	dl - possible ModR/M byte
+;	ds:[codeBuf+si] - machine code buffer
+;	ds:[commandBuf+bx] - template of operands
+;	ds:[resultBuf+di] - output buffer
+; OUT
+;	Decrypted operands stored in ds:[resultBuf+di]
+;	si += number of bytes used as operand
+;	di += size of output
+;-------------------------------------------------------------------
+DecryptOperands PROC
+	push ax
+	push cx
+	push dx
+
+; Template
+	cmp [commandBuf + bx], "X"
+	jne @@SkipX
+		jmp @@End
+	@@SkipX:
+
+	@@End:
+	pop dx
+	pop cx
+	pop ax
+	ret
+DecryptOperands ENDP
 
 ;-------------------------------------------------------------------
 ; GetOpcodeLine - parse a line from a file with opcodes
@@ -426,7 +487,7 @@ GetOpcodeGroupsLine PROC
 	je @@NoParameters
 		mov al, 16
 	@@NoParameters:
-	mov bp, offset groupsBuf
+	mov bx, offset groupsBuf
 	mov di, offset commandBuf
 	sub di, offset resultBuf		;because procedure will add it later
 	call WriteToBuf
@@ -444,7 +505,7 @@ GetOpcodeGroupsLine ENDP
 ; replacing zeroes with spaces.
 ; IN
 ;	al - number of bytes to copy
-;	ds:bp - input buffer
+;	ds:bx - input buffer
 ;	ds:[resultBuf+di] - output buffer
 ; OUT
 ;	Copied string, stored in ds:[resultBuf+di]
@@ -452,21 +513,20 @@ GetOpcodeGroupsLine ENDP
 ;-------------------------------------------------------------------
 WriteToBuf PROC
 	push ax
-	push bp
+	push bx
 
 	@@Loop:
-		mov ah, [ds:bp]
-		inc bp
+		mov ah, [bx]
+		inc bx
 		cmp ah, 0
 		jne @@NotZero
 			mov ah, " "
 		@@NotZero:
-		mov [resultBuf + di], ah
-		inc di
+		WriteByte ah
 		dec al
 		jnz @@Loop
 
-	pop bp
+	pop bx
 	pop ax
 	ret
 WriteToBuf ENDP
@@ -475,12 +535,13 @@ WriteToBuf ENDP
 ; WriteAsHex - write an integer into result buffer in hexadecimal format
 ; IN
 ;	ah / ax - integer to convert
-;	cx (2 or 4) - size of the integer:
+;	cx - number of nibbles to write (from the left: ->XXXXh);
+;		i.e. size of the integer:
 ;			2(nibbles) for 1 byte integer / 4(nibbles) - for 2 bytes
 ;	ds:[resultBuf+di] - output buffer
 ; OUT
 ;	An ASCII string with a number converted to hex, stored in ds:[resultBuf+di]
-;	di += (2 or 4)
+;	di += number of symbols (0-F) written
 ;-------------------------------------------------------------------
 WriteAsHex PROC
 	push ax
@@ -492,8 +553,7 @@ WriteAsHex PROC
 	mov bx, ax
 	and bx, 000Fh
 	mov bl, [hex + bx]
-	mov [resultBuf + di], bl
-	inc di
+	WriteByte bl
 	loop @@Repeat
 
 	pop cx

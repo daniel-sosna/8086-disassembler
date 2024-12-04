@@ -14,7 +14,7 @@ SHL
 SHR             
 --              
 SAR             
-TEST    Eb  Ib  
+TEST    Ebt Ib  
 --              
 NOT             
 NEG             
@@ -22,7 +22,7 @@ MUL
 IMUL            
 DIV             
 IDIV            
-TEST    Ev  Iv  
+TEST    Ew  Iw  
 --              
 NOT             
 NEG             
