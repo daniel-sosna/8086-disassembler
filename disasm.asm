@@ -10,7 +10,7 @@ LOCALS @@
 
 FileNameSize = 15	;Max size of the names of the entered files
 CodeBufSize = 100h	;Size of the machine code block to read at a time (minimum 6)
-CommandSize = 16	;Size of each line in opcodes file
+CommandSize = 18	;Size of each line in opcodes file (including 2 bytes for new line)
 ResultSize = 30		;max possible size of assembly instruction + 2 for newline
 CommandsFile EQU "opc.map", "$"
 GroupsFile EQU "opc-grp.map", "$"
@@ -350,12 +350,10 @@ GetCommand PROC
 	mov dl, [codeBuf + si]
 	mov word ptr [modByteFlag], 1
 	mov bx, 8
-	cmp [commandBuf + bx], 0
+	cmp [commandBuf + bx], " "
 	je @@End			;if there is no first operand
 		call DecryptOperands
 		mov bx, 12
-		cmp [commandBuf + bx], 0
-		je @@End		;if there is no second operand
 		cmp [commandBuf + bx], " "
 		je @@End		;if there is no second operand
 			;Add comma between operands
@@ -685,7 +683,7 @@ GetOpcodeLine PROC
 	mov ax, 4200h
 	int 21h
 
-	;Read line and store to the command buffer
+	;Read line and store it to the command buffer
 	mov ah, 3Fh
 	mov cx, 16
 	mov dx, offset commandBuf
@@ -731,7 +729,7 @@ GetOpcodeGroupsLine PROC
 	mov ax, 4200h
 	int 21h
 
-	;Store line in the groups buffer
+	;Read line and store it in the groups buffer
 	mov ah, 3Fh
 	mov cx, 16
 	mov dx, offset groupsBuf
@@ -739,7 +737,7 @@ GetOpcodeGroupsLine PROC
 
 	;Move template from the groups buffer to the command buffer
 	mov al, 8
-	cmp [groupsBuf + 8], 0
+	cmp [groupsBuf + 8], " "
 	je @@NoParameters
 		mov al, 16
 	@@NoParameters:
@@ -774,10 +772,6 @@ WriteToBuf PROC
 	@@Loop:
 		mov ah, [bx]
 		inc bx
-		cmp ah, 0
-		jne @@NotZero
-			mov ah, " "
-		@@NotZero:
 		WriteByte ah
 		dec al
 		jnz @@Loop
